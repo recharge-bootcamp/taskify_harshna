@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<style type="text/css">
+#FormDiv{
+border: solid 2px #c5c5c5;
+    border-radius: 10px;
+    text-align: center;
+    width: 40%;
+    display: block;
+    float: left;
+    margin-left: 30%;
+    margin-top: 10%;
+    background:lightblue;
+}
+input{
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+
+</style>
+<script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+<script type="text/javascript">
+
+function onSubmit(){
+	var xhr =
+		$.ajax({ 
+			url: 'REST/WebService/login', 
+			type: 'post', 
+			dataType: 'json', 
+			data: $('form#loginForm').serialize(), 
+			statusCode: {
+		         401: function() {
+		            alert('Invalid User');
+		         }},
+			success: function(data) {
+					var headers = xhr.getAllResponseHeaders(); 
+					var token = xhr.getResponseHeader("Authorization");
+					localStorage.setItem("Authorization", token);
+					localStorage.setItem("UserId", data.userId);
+					window.location.href = "tasks.html";
+			}
+		});
+}</script>
+<title>Taskify</title>
+</head>
+<body>
+<div id="FormDiv">
+	<form id="loginForm" action="REST/WebService/login" method="post" >
+	Username:<input name="username" type="text" value="test@gmail.com"><br/><br/>
+	Password:<input name="password" type="password" value="test"><br/><br/>
+	<input type="button" value="Login" onclick="onSubmit()">
+	</form>
+</div>
+</body>
+</html>

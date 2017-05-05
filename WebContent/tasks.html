@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Taskify</title>
+  <link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+  <!--  <link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/overcast/jquery-ui.css"> -->
+  <!--  <link rel="stylesheet" href="/resources/demos/style.css">  -->
+ 
+  <style>
+  #feedback { font-size: 1.4em; }
+  #selectable .ui-selecting { background: lightblue; }
+  #selectable .ui-selected { background: lightblue; color: white; }
+  #selectable { list-style-type: none; margin: 0; padding: 0; }
+  #selectable li { margin: 3px; padding: 1px; float: left; font-size:15px; text-align: center; background-color: white; }
+  li{border-radius: 10px; overflow:hidden; word-wrap: break-word; width:inherit;}
+  .resizable { width: 400px; height: 150px; padding: 0.5em; }
+  .resizable h3 { text-align: center; margin: 0; }
+  .taskInfo{background:lightskyblue;}
+  
+	#upperSection { 
+    
+    margin: 0 auto;
+    border: 1px solid #c5c5c5;
+    border-radius:10px;
+	}
+	#left    {
+	    width: 50%;
+	    height: 100px;
+	    background: inherit;
+	    float: left;
+	    padding-left: 10px;
+	}
+	
+	#right  {
+	    width: 50%;
+	    background: inherit;
+	    height: 100px;
+	    margin-left: 50%;
+	}
+	#right button{
+	float:right;
+	margin-right:10px;
+	margin-top:10px;
+	}
+	.dialogClass, .updateTaskdialogClass{
+	display:none;
+	}
+	#bodyContainer {
+	width:70%;
+	float:left 15%;
+	}
+	#filterId{
+	float: left;
+	display: inline-block;
+	width: 100%;
+	padding: 15px 0px 15px 0px;
+	}
+	.filterButton{
+	background-color: white;
+    border: none;
+    color: blue;
+    font-size: 14px;
+    padding-left: 25px;
+    padding-right: 25px;
+    cursor: pointer;
+    }
+    .filterButtonSelected{
+    background: darkgrey;
+    border-radius: 3px;
+    }
+    #msgDiv{
+	    width: 100%;
+	    height: 25px;
+	    color: red;
+	    text-align: center;
+	    font-size: large;
+    }
+    .Archived{
+    display:none;}
+  </style>
+  <script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+  <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+
+<script type="text/javascript">
+//var USERID = location.search.split('id=')[1];
+var USERID = localStorage.getItem("UserId");
+$.ajaxSetup({
+    headers: { 'Authorization': localStorage.getItem("Authorization") }
+});
+
+var jsonString ='';
+var jsonObj ='';
+var jsonTaskCountString ='';
+var jsonTCountObj = '';
+
+$( function() {
+	  createTaskHtml();
+	  updateTaskCountValues();
+	
+  $('#logoutButton').button().click(function(){
+	  $.ajax({ 
+			 url: 'REST/WebService/logout/'+USERID, 
+			 type: 'get', 
+			 dataType: 'json', 
+			 statusCode: {
+		         401: function() {
+		           redirectLogin();
+		         }},
+			 success: function(data) {
+				 var result =  data;
+			 		if(result.Status == "Logged Out"){
+							window.location.href = "index.html";
+			 		}else{
+						showMessage("User could not be Logged Out.");
+			 		}
+			 }
+		}); 
+	});
+  $("#addButton").button().click(function(){
+  	$(".dialogClass").dialog({
+  		width:'auto',
+  		title: "Add New Task",
+  	    open: function (event, ui) {
+  	        $(".ui-widget-overlay").css({
+  	            opacity: 0.5,
+  	            filter: "Alpha(Opacity=50)",
+  	            //backgroundColor: "grey"
+  	        });
+  	    },
+  	    modal: true
+  	});
+  	$("#newTaskDueDate").datepicker({
+  		dateFormat : 'yy-mm-dd',
+  	});
+  	$("#newTaskContent").focus();
+  });
+  $(".filterButton").click(function(){
+  	$(".filterButton").removeClass("filterButtonSelected");
+  	$("#"+this.id).addClass("filterButtonSelected");
+  	var selValue = $("#"+this.id).val();
+  	if(selValue == "All"){
+  		$('#selectable li').show();
+  		$('#selectable li').filter('.Archived').hide();
+  	}else{
+	    	$('#selectable li').hide();
+	        $('#selectable li.'+selValue).show();
+  	}
+  	
+  });
+  
+  $("#filterAll").trigger( "click" );
+} );
+function initializeAllElements(){
+	$( "#selectable" ).selectable({
+	  	selected: function(event, ui) {
+	          $(ui.selected).siblings().removeClass("ui-selected");
+	          var taskId = $(this).children('li.ui-selected').attr('id');;
+	          
+	          getTaskdetails(taskId);
+	          $(".updateTaskdialogClass").dialog({
+	        		width:'auto',
+	        		title: "Update Task",
+	        	    open: function (event, ui) {
+	        	    	$( "#updateTaskDueDate" ).datepicker({
+	        	   	  	 dateFormat : 'yy-mm-dd',
+	        	   	  		});
+	        	        $(".ui-widget-overlay").css({
+	        	            opacity: 0.5,
+	        	            filter: "Alpha(Opacity=50)",
+	        	            //backgroundColor: "grey"
+	        	        });
+	        	    },
+	        	    modal: true
+	        	});
+	    	}
+	  });
+	  $( ".resizable" ).resizable();
+	  $( ".datepicker" ).datepicker({
+	  	 dateFormat : 'yy-mm-dd',
+	       onSelect: function(dateText, inst) {
+	  		 var taskid = $(this).parent().closest('li').attr('id');
+	  		 
+	  		  $.ajax({ 
+	  			 url: 'REST/WebService/updateDate/'+taskid+'/'+dateText, 
+	  			 type: 'get', 
+	  			 dataType: 'json', 
+	  			 statusCode: {
+			         401: function() {
+			           redirectLogin();
+			         }},
+	  			 success: function(data) {
+	  				 var result =  data;
+	  			 		
+							if(result.result == "true"){
+								showMessage("Task Updated Successfully.");
+								window.location.href = "tasks.html";
+	  			 		}else{
+	  						showMessage("Task could not be updated.");
+	  			 		}
+	  			 }
+	  		}); 
+	  	}
+	  });
+	  $(".statusClass").change(function () {
+	  	var taskId = $(this).parent().closest('li').attr('id');
+	      var SelectedValue = this.value;
+	      $( "#"+taskId ).removeClass( ).addClass( "ui-state-default "+SelectedValue );
+	      
+	      var statusID = 1;
+	      if(SelectedValue == "Pending"){
+	      	statusID = 1;
+	      }else if(SelectedValue == "Completed"){
+	      	statusID = 2;
+	      }else if(SelectedValue == "OverDue"){
+	      	statusID = 3;
+	      }else if(SelectedValue == "Archived"){
+	      	statusID = 4;
+	      }
+	      $.ajax({ 
+				 url: 'REST/WebService/updateStatus/'+taskId+'/'+statusID, 
+				 type: 'get', 
+				 dataType: 'json',
+				 statusCode: {
+			         401: function() {
+			           redirectLogin();
+			         }},
+				 success: function(data) {
+					 var result =  data;
+				 		
+						if(result.result == "true"){
+							showMessage("Task Updated Successfully.");
+							$( "#"+taskId ).removeClass( ).addClass( "ui-state-default "+SelectedValue );
+							window.location.href = "tasks.html";
+				 		}else{
+							showMessage("Task could not be updated.");
+				 		}
+				 }
+			});
+	     
+	      
+	  });
+  }
+function createTaskHtml(){
+	  var taskId = '';
+	  var taskStatus = '';
+	  var taskContent = '';
+	  var taskDueDate = '';
+	  var selectHtml = '';
+	  var innerHtml = '';
+	  
+	  var userId = USERID;
+	  $.ajax({ 
+			 url: 'REST/WebService/tasks/'+userId, 
+			 type: 'get', 
+			 dataType: 'json',
+			 statusCode: {
+		         401: function() {
+		           redirectLogin();
+		         }},
+			 success: function(data) {
+				 var result =  data;
+				 jsonObj = result;	
+				 
+				 $.each(jsonObj.tasks, function(index, element) {
+					  taskId = element.taskId;
+					  
+					  taskStatus = element.status;
+					  
+					  taskContent = element.content;
+					  
+					  taskDueDate = element.dueDate;
+					  
+					  var dtArr = taskDueDate.split('T');
+					  
+					  if(taskStatus == 'Pending'){
+						  selectHtml = '<select class="statusClass"><option value="Pending" selected="selected">Pending</option><option value="Completed">Completed</option><option value="OverDue" disabled>OverDue</option><option value="Archived">Archived</option></select>';
+					  }else if(taskStatus == 'Completed'){
+						  selectHtml = '<select class="statusClass"><option value="Pending">Pending</option><option value="Completed" selected="selected">Completed</option><option value="OverDue" disabled>OverDue</option><option value="Archived">Archived</option></select>';
+					  }else if(taskStatus == 'Overdue'){
+						  selectHtml = '<select class="statusClass"><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="OverDue" selected="selected">OverDue</option><option value="Archived">Archived</option></select>';
+					  }else if(taskStatus == 'Archived'){
+						  selectHtml = '<select class="statusClass"><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="OverDue" disabled>OverDue</option><option value="Archived" selected="selected">Archived</option></select>';
+					  }
+					   
+						   
+					  innerHtml += '<li id="'+taskId+'"class="ui-state-default '+taskStatus+'"><div class="resizable"><div class="taskInfo"><table><tr><td>DueDate: <input type="text" class="datepicker" value="'+dtArr[0]+'"></td><td>Status:'+selectHtml+'</td></tr></table></div><div class="taskContent"><p>'+taskContent+'</p></div></div></li>';
+					   
+					});
+				  
+				  $("#selectable").html(innerHtml);
+				  initializeAllElements();
+			}
+		});
+	  
+	  
+}
+function updateTaskCountValues(){
+	  var taskCount = '';
+	  var taskStatus = '';
+	  
+	  var userId = USERID;
+	  $.ajax({ 
+			 url: 'REST/WebService/count/'+userId, 
+			 type: 'get', 
+			 dataType: 'json', 
+			 statusCode: {
+		         401: function() {
+		           redirectLogin();
+		         }},
+			 success: function(data) {
+				 var result =  data;
+				 jsonTCountObj = result;	
+				 
+				 $.each(jsonTCountObj.taskCount, function(index, element) {
+					  taskCount = element.count;
+					  taskStatus = element.status;
+					  
+					  if(taskStatus == "Completed"){
+						  $("#completedTaskCount").html(taskCount);
+					  }else if(taskStatus == "Pending"){
+						  $("#pendingTaskCount").html(taskCount);
+					  }else if(taskStatus == "Overdue"){
+						  $("#overdueTaskCount").html(taskCount);
+					  }
+					  
+					});
+			}
+		});
+	  
+	  
+	  //showMessage("Task Updated Successfully.");
+}
+function showMessage(str){
+	  $("#msgDiv").html(str).fadeToggle(6000);
+}
+function submitNewTask(){
+	$("#newTaskUserId").val(USERID);
+	  var duedate = $("#newTaskDueDate").val();
+	  if(duedate == null || duedate == ''){
+		  $("#newTaskDueDate").focus();
+	  }
+	  var content = $("#newTaskContent").val();
+	  if(content == null || content == ''){
+		  $("#newTaskContent").focus();
+	  }
+	  $('.dialogClass').dialog('close');
+	  $.ajax({ 
+		  url: 'REST/WebService/addTask', 
+		  type: 'post', 
+		  dataType: 'json', 
+		  data: $('form#newTaskFormId').serialize(),
+		  statusCode: {
+		         401: function() {
+		           redirectLogin();
+		         }},
+		  success: function(data) {
+		  
+		  var result =  data;
+			 
+				if(result.result == "true"){
+					showMessage("Count Updated Successfully.");
+					window.location.href = "tasks.html";
+		 		}else{
+					showMessage("Count could not be updated.");
+		 		}
+		  }
+		  });
+	  
+}
+function  getTaskdetails(taskId){
+	
+	var userid = USERID;
+	$.ajax({ 
+		  url: 'REST/WebService/getTask/'+taskId, 
+		  type: 'get', 
+		  dataType: 'json', 
+		  statusCode: {
+		         401: function() {
+		           redirectLogin();
+		         }},
+		  success: function(data) {
+		  var result =  data;
+		  var dtArr = result.dueDate.split('T');
+			$('#updateTaskId').val(result.taskId); 
+			$('#updateTaskDueDate').val(dtArr[0]);
+			$('#updateTaskContent').val(result.content);
+			$('#updateTaskUserId').val(userid);
+			$('#updateTaskSelectId').val(result.statusId);		
+		  }
+		  });
+	
+	
+	
+	
+	
+	
+}
+function submitUpdateTask(){
+	$('.updateTaskdialogClass').dialog('close');
+	$.ajax({ 
+		  url: 'REST/WebService/updateTask', 
+		  type: 'post', 
+		  dataType: 'json', 
+		  data: $('form#updateTaskFormId').serialize(),
+		  statusCode: {
+		         401: function() {
+		           redirectLogin();
+		         }},
+		  success: function(data) {
+		  var result =  data;
+			 
+				if(result.result == "true"){
+					showMessage("Task Updated Successfully.");
+					window.location.href = "tasks.html";
+		 		}else{
+					showMessage("Task could not be updated.");
+		 		}
+		  }
+		  });
+	
+}
+function redirectLogin(){
+	window.location.href = "index.html";
+}
+</script>
+
+</head>
+<body>
+<div id="bodyContainer">
+<div id="msgDiv"></div>
+<div id="upperSection">
+<div id="left">
+	<b style="font-size:20px;">Hi User!</b>
+	<table>
+  <tr>
+    <td>Pending Tasks :</td>
+    <td id="pendingTaskCount">0</td> 
+  </tr>
+  <tr>
+    <td>Completed Tasks :</td>
+    <td id="completedTaskCount">0</td> 
+  </tr>
+  <tr>
+    <td>Overdue Tasks :</td>
+    <td id="overdueTaskCount">0</td> 
+  </tr>
+</table>
+
+</div>
+<div id="right">
+	<button id="logoutButton">Logout</button>
+	<button id="addButton">Add Task</button>
+</div>
+</div>
+ <div id="lowerSection">
+ <div id="filterId">
+		 <button class="filterButton" id="filterAll" value="All">All</button>
+		 <button class="filterButton" id="filterPending" value="Pending">Pending</button>
+		 <button class="filterButton" id="filterCompleted" value="Completed">Completed</button>
+		 <button class="filterButton" id="filterOverDue" value="Overdue">OverDue</button>
+		 <button class="filterButton" id="filterArchived" value="Archived">Archived</button>
+</div>
+<ol id="selectable">
+  <li class="ui-state-default">
+  	</li>
+</ol>
+ </div>
+ <div class="dialogClass" title="New Task">
+	 <form id="newTaskFormId" action="">
+		  Due Date:<br>
+		  <input type="text" id="newTaskDueDate" name="duedate" value=""><br><br>
+		  <textarea id="newTaskContent" name="content" rows="4" cols="50">
+		  
+		  </textarea><br><br>
+		  <input type="hidden" id="newTaskUserId" name="id" value="10">
+		  <input type="button" value="Submit" onclick="submitNewTask()">
+	</form>
+ </div>
+ <div class="updateTaskdialogClass" title="Update Task">
+	 <form id="updateTaskFormId" action="">
+		  Status:<br>
+		  <select id="updateTaskSelectId" class="statusClass" name="statusid">
+			  	<option value="1">Pending</option>
+			  	<option value="2">Completed</option>
+			  	<option value="3" disabled>OverDue</option>
+			  	<option value="4">Archived</option>
+		  </select><br><br>
+		  Due Date:<br>
+		  <input type="text" id="updateTaskDueDate" name="duedate" value=""><br><br>
+		  <textarea id="updateTaskContent" name="content" rows="4" cols="50">
+		  
+		  </textarea><br><br>
+		  <input type="hidden" id="updateTaskUserId" name="userid" value="10">
+		  <input type="hidden" id="updateTaskId" name="id" value="10">
+		  <input type="button" value="Submit" onclick="submitUpdateTask()">
+	</form>
+ </div>
+</div>
+</body>
+</html>
